@@ -18,7 +18,7 @@ class FlipSimulationApp:
         # Scene parameters matching original JS implementation
         self.gravity = -9.81  # Negative for downward gravity
         self.dt = 1.0 / 60.0  # Time step
-        self.flip_ratio = 0.9  # Blend between PIC (0) and FLIP (1)
+        self.flip_ratio = 0.95  # Blend between PIC (0) and FLIP (1)
         self.num_pressure_iters = 50  # Match JS (was 20)
         self.num_particle_iters = 2  # Particle separation iterations
         self.frame_nr = 0
@@ -28,14 +28,14 @@ class FlipSimulationApp:
 
         # Obstacle properties
         h = self.height / 100.0  # Cell size (scaled to match JS)
-        self.obstacle_x = 3.0  # Match JS
-        self.obstacle_y = 2.0  # Match JS
+        self.obstacle_x = int(self.width * 0.8)  # Match JS
+        self.obstacle_y = int(self.height * 0.8)  # Match JS
         self.obstacle_radius = 0.15 * min(self.width, self.height)  # Match JS scaling
         self.obstacle_vel_x = 0.0
         self.obstacle_vel_y = 0.0
 
         # Visualization flags matching JS
-        self.paused = True  # Start paused like JS
+        self.paused = False
         self.show_obstacle = True
         self.show_particles = True
         self.show_grid = False  # Start with grid hidden like JS
@@ -87,8 +87,8 @@ class FlipSimulationApp:
     def initialize_particles(self):
         """Initialize fluid particles in a hexagonal pattern matching the original JS"""
         # Calculate proportions for dam break setup
-        rel_water_width = 0.8
-        rel_water_height = 0.4
+        rel_water_width = 0.4
+        rel_water_height = 0.8
 
         # Calculate particle spacing based on cell size
         h = 1.0  # Cell size in simulation units
@@ -183,6 +183,8 @@ class FlipSimulationApp:
             # Mouse events for obstacle movement and particle creation
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mouse_x, mouse_y = event.pos
+                # Flip the y-coordinate to match the display transformation
+                mouse_y = self.screen_height - mouse_y
                 cell_x = mouse_x / self.cell_size
                 cell_y = mouse_y / self.cell_size
 
@@ -205,6 +207,8 @@ class FlipSimulationApp:
 
             elif event.type == pygame.MOUSEMOTION:
                 mouse_x, mouse_y = event.pos
+                # Flip the y-coordinate to match the display transformation
+                mouse_y = self.screen_height - mouse_y
                 cell_x = mouse_x / self.cell_size
                 cell_y = mouse_y / self.cell_size
 
@@ -229,24 +233,43 @@ class FlipSimulationApp:
 
         return True
 
-    def create_particles(self, center_x, center_y):
-        """Create fluid particles around the center point"""
-        for x in range(
-            max(0, int(center_x - self.ball_radius)),
-            min(self.width, int(center_x + self.ball_radius + 1)),
-        ):
-            for y in range(
-                max(0, int(center_y - self.ball_radius)),
-                min(self.height, int(center_y + self.ball_radius + 1)),
-            ):
-                distance = np.sqrt((x - center_x) ** 2 + (y - center_y) ** 2)
-                if distance <= self.ball_radius:
+    def create_particles(self, center_x, center_y, radius=0.5):
+        """Create fluid particles around the center point with denser packing
+
+        Parameters:
+            center_x, center_y: Center position of the particle circle
+            radius: Radius of the particle circle, defaults to self.ball_radius if None
+        """
+        # Spacing between particles
+        particle_spacing = 0.25
+
+        # Calculate bounds of the box containing the circle
+        x_min = max(0, int(center_x - radius))
+        x_max = min(self.width, int(center_x + radius + 1))
+        y_min = max(0, int(center_y - radius))
+        y_max = min(self.height, int(center_y + radius + 1))
+
+        # Create particles within the circle
+        for i in range(int((x_max - x_min) / particle_spacing) + 1):
+            x = x_min + i * particle_spacing
+
+            for j in range(int((y_max - y_min) / particle_spacing) + 1):
+                y = y_min + j * particle_spacing
+
+                # Check if point is within the circle
+                distance = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
+
+                if distance <= radius:
                     self.sim.add_particle(x, y)
 
     def render(self):
         """Render the current state to the screen"""
         # Clear the screen
         self.screen.fill((0, 0, 0))
+
+        # Create a temporary surface to draw everything on
+        temp_surface = pygame.Surface((self.screen_width, self.screen_height))
+        temp_surface.fill((0, 0, 0))
 
         # Render grid if enabled
         if self.show_grid:
@@ -271,7 +294,7 @@ class FlipSimulationApp:
                             color = (0, 0, 0)  # Black
 
                         pygame.draw.rect(
-                            self.screen, color, rect, 0 if cell_type != 1 else 1
+                            temp_surface, color, rect, 0 if cell_type != 1 else 1
                         )
 
         # Render particles if enabled
@@ -286,7 +309,7 @@ class FlipSimulationApp:
                     int(particles[idx + 4] * 255),
                 )
                 pygame.draw.circle(
-                    self.screen,
+                    temp_surface,
                     color,
                     (int(x * self.cell_size), int(y * self.cell_size)),
                     max(1, int(self.cell_size * 0.3)),
@@ -295,7 +318,7 @@ class FlipSimulationApp:
         # Render obstacle if enabled
         if self.show_obstacle:
             pygame.draw.circle(
-                self.screen,
+                temp_surface,
                 (255, 0, 0),  # Red
                 (
                     int(self.obstacle_x * self.cell_size),
@@ -304,6 +327,10 @@ class FlipSimulationApp:
                 int(self.obstacle_radius * self.cell_size),
                 2,  # Line width
             )
+
+        # Flip the temporary surface vertically and blit to the screen
+        flipped_surface = pygame.transform.flip(temp_surface, False, True)
+        self.screen.blit(flipped_surface, (0, 0))
 
         # Update the display
         pygame.display.flip()
@@ -384,7 +411,7 @@ class FlipSimulationApp:
 
 
 def main():
-    app = FlipSimulationApp(width=20, height=30, cell_size=40)
+    app = FlipSimulationApp(width=60, height=35, cell_size=35)
     app.run()
 
 
