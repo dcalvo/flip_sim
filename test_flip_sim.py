@@ -389,18 +389,58 @@ class FlipSimulationApp:
         """Main simulation loop"""
         running = True
 
+        # Timing statistics
+        sim_times = []
+        render_times = []
+        total_times = []
+
         while running:
+            frame_start_time = time.time()
+
             # Handle user input
             running = self.handle_events()
 
-            # Update simulation state
+            # Measure simulation time
+            sim_start_time = time.time()
             self.update_simulation()
+            sim_end_time = time.time()
+            sim_time = sim_end_time - sim_start_time
 
-            # Render current state
+            # Measure rendering time
+            render_start_time = time.time()
             self.render()
+            render_end_time = time.time()
+            render_time = render_end_time - render_start_time
 
             # Update FPS display
             self.update_fps_display()
+
+            # Calculate total frame time
+            frame_end_time = time.time()
+            total_time = frame_end_time - frame_start_time
+
+            # Store timing data
+            if not self.paused:
+                sim_times.append(sim_time)
+                render_times.append(render_time)
+                total_times.append(total_time)
+
+                # Print timing every 30 frames
+                if self.frame_nr % 30 == 0:
+                    avg_sim = sum(sim_times[-30:]) / min(30, len(sim_times))
+                    avg_render = sum(render_times[-30:]) / min(30, len(render_times))
+                    avg_total = sum(total_times[-30:]) / min(30, len(total_times))
+
+                    sim_percent = (avg_sim / avg_total) * 100
+                    render_percent = (avg_render / avg_total) * 100
+                    other_percent = 100 - sim_percent - render_percent
+
+                    print(
+                        f"Timing (ms): Sim: {avg_sim*1000:.2f} ({sim_percent:.1f}%), "
+                        + f"Render: {avg_render*1000:.2f} ({render_percent:.1f}%), "
+                        + f"Other: {other_percent:.1f}%, "
+                        + f"Total: {avg_total*1000:.2f}"
+                    )
 
             # Cap the frame rate
             self.clock.tick(60)  # Target 60 FPS
@@ -409,9 +449,25 @@ class FlipSimulationApp:
         pygame.quit()
         self.print_stats()
 
+        # Print overall timing statistics
+        if sim_times:
+            avg_sim = sum(sim_times) / len(sim_times)
+            avg_render = sum(render_times) / len(render_times)
+            avg_total = sum(total_times) / len(total_times)
+
+            print("\nOverall Timing Statistics:")
+            print(
+                f"Average simulation time: {avg_sim*1000:.2f} ms ({(avg_sim/avg_total)*100:.1f}%)"
+            )
+            print(
+                f"Average rendering time: {avg_render*1000:.2f} ms ({(avg_render/avg_total)*100:.1f}%)"
+            )
+            print(f"Average frame time: {avg_total*1000:.2f} ms")
+            print(f"Average FPS: {1/avg_total:.2f}")
+
 
 def main():
-    app = FlipSimulationApp(width=60, height=35, cell_size=35)
+    app = FlipSimulationApp(width=200, height=35, cell_size=10)
     app.run()
 
 
